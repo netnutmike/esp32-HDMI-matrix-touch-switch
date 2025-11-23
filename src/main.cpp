@@ -178,10 +178,10 @@ void initButtons() {
                 buttons[index].pressed = false;
                 
                 // Debug: Print button boundaries
-                Serial.printf("Button %d (%s): x=%d-%d, y=%d-%d\n", 
-                    index + 1, labels[index].c_str(),
-                    buttons[index].x, buttons[index].x + buttons[index].w,
-                    buttons[index].y, buttons[index].y + buttons[index].h);
+                //Serial.printf("Button %d (%s): x=%d-%d, y=%d-%d\n", 
+                //    index + 1, labels[index].c_str(),
+                //    buttons[index].x, buttons[index].x + buttons[index].w,
+                //    buttons[index].y, buttons[index].y + buttons[index].h);
                 
                 drawButton(buttons[index]);
                 index++;
@@ -197,13 +197,13 @@ int checkButtonPress(uint16_t x, uint16_t y) {
     for (int i = 0; i < BUTTON_COUNT; i++) {
         if (x >= buttons[i].x && x <= (buttons[i].x + buttons[i].w) &&
             y >= buttons[i].y && y <= (buttons[i].y + buttons[i].h)) {
-            Serial.printf("Touch (%d,%d) matched Button %d bounds: x=%d-%d, y=%d-%d\n",
-                x, y, i + 1, buttons[i].x, buttons[i].x + buttons[i].w,
-                buttons[i].y, buttons[i].y + buttons[i].h);
+            //Serial.printf("Touch (%d,%d) matched Button %d bounds: x=%d-%d, y=%d-%d\n",
+            //    x, y, i + 1, buttons[i].x, buttons[i].x + buttons[i].w,
+            //    buttons[i].y, buttons[i].y + buttons[i].h);
             return i;
         }
     }
-    Serial.printf("Touch (%d,%d) did not match any button\n", x, y);
+    //Serial.printf("Touch (%d,%d) did not match any button\n", x, y);
     return -1;
 }
 
