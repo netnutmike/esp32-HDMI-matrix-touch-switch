@@ -74,33 +74,54 @@ bool getTouch(uint16_t &x, uint16_t &y) {
         return false;
     }
 
-    touchSPI.beginTransaction(SPISettings(2500000, MSBFIRST, SPI_MODE0));
-    digitalWrite(XPT2046_CS, LOW);
-
-    // Read X coordinate
-    touchSPI.transfer(0x90); // Start, A2-A0=001 (Y position), Mode=0, SER/DFR=1, PD1-PD0=00
-    uint16_t rawX = touchSPI.transfer(0x00) << 8;
-    rawX |= touchSPI.transfer(0x00);
-    rawX >>= 3;
-
-    // Read Y coordinate
-    touchSPI.transfer(0xD0); // Start, A2-A0=101 (X position), Mode=0, SER/DFR=1, PD1-PD0=00
-    uint16_t rawY = touchSPI.transfer(0x00) << 8;
-    rawY |= touchSPI.transfer(0x00);
-    rawY >>= 3;
-
-    digitalWrite(XPT2046_CS, HIGH);
-    touchSPI.endTransaction();
-
-    // Calibration and mapping for CYD (adjust these values if needed)
-    // These values are typical for the CYD but may need fine-tuning
-    x = map(rawX, 200, 3700, 0, 320);
-    y = map(rawY, 200, 3700, 0, 240);
+    // Take multiple samples for stability
+    const int samples = 5;
+    uint32_t rawX = 0;
+    uint32_t rawY = 0;
     
-    // Rotation adjustment (CYD is typically rotated)
-    uint16_t temp = x;
-    x = 320 - y;
-    y = temp;
+    touchSPI.beginTransaction(SPISettings(2500000, MSBFIRST, SPI_MODE0));
+    
+    for (int i = 0; i < samples; i++) {
+        digitalWrite(XPT2046_CS, LOW);
+        delayMicroseconds(10);
+        
+        // Read X coordinate (0xD0 command)
+        touchSPI.transfer(0xD0);
+        delayMicroseconds(10);
+        uint16_t x_val = touchSPI.transfer(0x00) << 8;
+        x_val |= touchSPI.transfer(0x00);
+        rawX += x_val >> 3;
+        
+        // Read Y coordinate (0x90 command)
+        touchSPI.transfer(0x90);
+        delayMicroseconds(10);
+        uint16_t y_val = touchSPI.transfer(0x00) << 8;
+        y_val |= touchSPI.transfer(0x00);
+        rawY += y_val >> 3;
+        
+        digitalWrite(XPT2046_CS, HIGH);
+        delayMicroseconds(10);
+    }
+    
+    touchSPI.endTransaction();
+    
+    // Average the samples
+    rawX /= samples;
+    rawY /= samples;
+    
+    // CYD calibration values for rotation 1 (landscape)
+    // The touch controller is rotated relative to the display
+    // Map and swap axes to match display orientation
+    int16_t tempX = map(rawY, 400, 3800, 0, 320);  // rawY maps to screen X
+    int16_t tempY = map(rawX, 300, 3700, 0, 240);  // rawX maps to screen Y
+    
+    // Assign swapped coordinates
+    x = tempX;
+    y = tempY;
+    
+    // Constrain to screen bounds
+    x = constrain(x, 0, 319);
+    y = constrain(y, 0, 239);
 
     return true;
 }
@@ -156,6 +177,12 @@ void initButtons() {
                 buttons[index].command = commands[index];
                 buttons[index].pressed = false;
                 
+                // Debug: Print button boundaries
+                Serial.printf("Button %d (%s): x=%d-%d, y=%d-%d\n", 
+                    index + 1, labels[index].c_str(),
+                    buttons[index].x, buttons[index].x + buttons[index].w,
+                    buttons[index].y, buttons[index].y + buttons[index].h);
+                
                 drawButton(buttons[index]);
                 index++;
             }
@@ -170,9 +197,13 @@ int checkButtonPress(uint16_t x, uint16_t y) {
     for (int i = 0; i < BUTTON_COUNT; i++) {
         if (x >= buttons[i].x && x <= (buttons[i].x + buttons[i].w) &&
             y >= buttons[i].y && y <= (buttons[i].y + buttons[i].h)) {
+            Serial.printf("Touch (%d,%d) matched Button %d bounds: x=%d-%d, y=%d-%d\n",
+                x, y, i + 1, buttons[i].x, buttons[i].x + buttons[i].w,
+                buttons[i].y, buttons[i].y + buttons[i].h);
             return i;
         }
     }
+    Serial.printf("Touch (%d,%d) did not match any button\n", x, y);
     return -1;
 }
 
@@ -181,7 +212,7 @@ int checkButtonPress(uint16_t x, uint16_t y) {
  */
 void sendMatrixCommand(String command) {
     MATRIX_SERIAL.print(command);
-    Serial.println("Sent command: " + command);
+    //Serial.println("Sent command: " + command);
 }
 
 /**
@@ -190,11 +221,11 @@ void sendMatrixCommand(String command) {
 void setup() {
     // Initialize USB serial for debugging
     Serial.begin(115200);
-    Serial.println("ESP32 CYD HDMI Matrix Controller Starting...");
+    //Serial.println("ESP32 CYD HDMI Matrix Controller Starting...");
 
     // Initialize matrix switch serial interface
     MATRIX_SERIAL.begin(MATRIX_BAUD, SERIAL_8N1, MATRIX_RX, MATRIX_TX);
-    Serial.println("Matrix Serial initialized at 115200 baud (8N1)");
+    //Serial.println("Matrix Serial initialized at 115200 baud (8N1)");
 
     // Initialize TFT display
     tft.init();
@@ -212,14 +243,14 @@ void setup() {
     tft.setTextColor(TFT_WHITE, BACKGROUND_COLOR);
     tft.setTextDatum(TC_DATUM);
     tft.setTextSize(2);
-    tft.drawString("HDMI Matrix Control", tft.width() / 2, 5);
+    //tft.drawString("HDMI Matrix Control", tft.width() / 2, 5);
 
     delay(500);
 
     // Initialize and draw buttons
     initButtons();
     
-    Serial.println("Setup complete!");
+    //Serial.println("Setup complete!");
 }
 
 /**
@@ -236,6 +267,9 @@ void loop() {
         
         // Debounce touch input (wait 200ms between touches)
         if (currentTime - lastTouchTime > 200 && !touchHandled) {
+            // Debug output for touch coordinates
+            Serial.printf("Touch detected at screen coordinates: (%d, %d)\n", touchX, touchY);
+            
             int buttonIndex = checkButtonPress(touchX, touchY);
             
             if (buttonIndex >= 0) {
